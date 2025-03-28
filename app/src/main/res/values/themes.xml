@@ -1,0 +1,14 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.Splitterrr" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryVariant">@color/colorPrimaryVariant</item>
+    </style>
+
+    <style name="toolbar">
+        <item name="android:textColor">@color/colorOnPrimary</item>
+        <item name="android:textSize">24sp</item>
+    </style>
+
+    <style name="Theme.Splitterrr" parent="Base.Theme.Splitterrr" />
+</resources>
