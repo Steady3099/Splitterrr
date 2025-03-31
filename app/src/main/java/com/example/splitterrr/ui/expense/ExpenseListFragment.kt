@@ -29,13 +29,16 @@ class ExpenseListFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        adapter = ExpenseAdapter()
-        binding.recyclerViewExpenses.layoutManager = LinearLayoutManager(requireContext())
-        binding.recyclerViewExpenses.adapter = adapter
+
 
         // Observe LiveData and update UI
         viewModel = ViewModelProvider(this,
             ExpenseViewModelFactory(requireActivity().application))[ExpenseViewModel::class.java]
+
+        adapter = ExpenseAdapter(requireContext(),viewModel)
+        binding.recyclerViewExpenses.layoutManager = LinearLayoutManager(requireContext())
+        binding.recyclerViewExpenses.adapter = adapter
+
         viewModel.allExpenses.observe(viewLifecycleOwner) {
             adapter.submitList(it)
         }
