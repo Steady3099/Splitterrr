@@ -99,7 +99,7 @@ class ExpenseListFragment : Fragment() {
     }
 
     private fun getCurrentLocation(accuracy: Boolean){
-        locationHelper.getCurrentLocation(accuracy) {  result ->
+        locationHelper.getCurrentLocation {  result ->
             when (result) {
                 is LocationHelper.LatestLocationResult.Success -> {
                     // Successfully got the location
