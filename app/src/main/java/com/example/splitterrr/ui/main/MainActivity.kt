@@ -28,7 +28,16 @@ class MainActivity : AppCompatActivity() {
                 .commit()
         }
 
-        requestLocationPermission()
+        binding.runButton.setOnClickListener {
+            val query = binding.inputText.text.toString()
+            if(query.isEmpty()) Toast.makeText(this, "Kindly enter your query", Toast.LENGTH_SHORT).show()
+            else{
+                val output = NativeBridge.runModel(query)
+                binding.outputText.text = output
+            }
+        }
+
+//        requestLocationPermission()
     }
 
     private val requestPermissionLauncher = registerForActivityResult(
