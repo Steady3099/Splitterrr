@@ -1,41 +1,39 @@
 package com.example.splitterrr.ui.main
 
 import android.app.AlertDialog
-import android.content.Context
 import android.content.Intent
-import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.util.Log
-import android.view.*
 import android.widget.Button
 import android.widget.EditText
-import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.content.ContextCompat
+import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.splitterrr.R
 import com.example.splitterrr.databinding.ActivityMainBinding
 import com.example.splitterrr.utils.ScreenCaptureService
-import com.example.splitterrr.utils.webrtc.SignalingClient
-import com.example.splitterrr.utils.webrtc.WebRtcClient
-import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.example.splitterrr.utils.webrtc.PeerConnectionClient
+import org.webrtc.DataChannel
 import org.webrtc.EglBase
+import org.webrtc.MediaStream
+import org.webrtc.RendererCommon
 
-class MainActivity : AppCompatActivity() {
+class MainActivity : AppCompatActivity(), PeerConnectionClient.RtcListener {
 
     private lateinit var binding: ActivityMainBinding
-    private lateinit var mediaProjectionManager: MediaProjectionManager
-    private var mediaProjection: MediaProjection? = null
-    private lateinit var webRtcClient: WebRtcClient
-    private lateinit var floatingStopButton: FloatingActionButton
-    private lateinit var signalingClient: SignalingClient
-    private lateinit var eglBase: EglBase
 
-    private val SCREEN_CAPTURE_REQUEST_CODE = 1000
+    private val mSocketAddress = "http://172.22.224.1:4000"
+    private var eglBase: EglBase? = null
+    private var mediaProjectionManager: MediaProjectionManager? = null
+    var mediaProjectionPermissionResultData: Intent? = null
+
+
+    companion object {
+        private const val SCREEN_CAPTURE_REQUEST_CODE: Int = 100
+        var peerConnectionClient: PeerConnectionClient? = null
+    }
+
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,32 +43,9 @@ class MainActivity : AppCompatActivity() {
         // Set up toolbar and floating button
         setSupportActionBar(binding.toolbar)
 
-        floatingStopButton = FloatingActionButton(this).apply {
-            setImageResource(android.R.drawable.ic_menu_close_clear_cancel)
-            backgroundTintList = ContextCompat.getColorStateList(this@MainActivity, R.color.colorPrimary)
-            visibility = View.GONE
-        }
-
-        val params = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.END or Gravity.BOTTOM
-            marginEnd = 24
-            bottomMargin = 24
-        }
-
-        addContentView(floatingStopButton, params)
-
         binding.btnStartSharing.setOnClickListener {
             showSupportDialog()
         }
-
-        floatingStopButton.setOnClickListener {
-            stopScreenSharing()
-        }
-
-        mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
     }
 
     private fun showSupportDialog() {
@@ -85,9 +60,9 @@ class MainActivity : AppCompatActivity() {
 
         btnStart.setOnClickListener {
             val roomId = input.text.toString().trim()
-            if (roomId == "1234") {
+            if (roomId.isNotEmpty()) {
                 dialog.dismiss()
-                startScreenCapture()
+                setupConnect(roomId)
             } else {
                 Toast.makeText(this, "Invalid Room ID", Toast.LENGTH_SHORT).show()
             }
@@ -96,109 +71,184 @@ class MainActivity : AppCompatActivity() {
         dialog.show()
     }
 
-    private fun startScreenCapture() {
-        val captureIntent = mediaProjectionManager.createScreenCaptureIntent()
-        startActivityForResult(captureIntent, SCREEN_CAPTURE_REQUEST_CODE)
-    }
-
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-
-        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE && resultCode == RESULT_OK && data != null) {
-            val serviceIntent = Intent(this, ScreenCaptureService::class.java)
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                this.startForegroundService(serviceIntent)
-            } else {
-                this.startService(serviceIntent)
-            }
-            // Delay WebRTC startup briefly to give time for foreground service to start
-            Handler(Looper.getMainLooper()).postDelayed({
-                startWebRTC(data)
-            }, 500)
-        } else {
-            Toast.makeText(this, "Screen capture permission denied", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun startWebRTC(mediaProjectionPermissionData: Intent) {
-        //   EGL context (one per activity)
+    private fun setupConnect(roomId: String) {
         eglBase = EglBase.create()
 
-        //  Signaling client
-        signalingClient = SignalingClient("ws://172.16.10.219:8080")   // use the constant
+        binding.localView.init(eglBase?.eglBaseContext, null)
+        binding.localView.setScalingType(RendererCommon.ScalingType.SCALE_ASPECT_FIT)
+        binding.localView.setMirror(false)
+        binding.localView.setZOrderMediaOverlay(true)
+        binding.localView.setEnableHardwareScaler(true) // Enable hardware scaler for efficiency
 
-        //   Initialise BOTH renderers with the same egl context
-        binding.remoteView.init(eglBase.eglBaseContext, null)
-        binding.remoteView.setMirror(false)
+        peerConnectionClient = PeerConnectionClient(
+            roomId,
+            this, mSocketAddress, eglBase!!
+        )
+        peerConnectionClient?.start()
 
-        binding.localView.init(eglBase.eglBaseContext, null)
-        binding.localView.setMirror(true)
+        startScreenCaptureIntent()
+    }
 
-        //   Build WebRtcClient (now takes local+remote renderers)
-        webRtcClient = WebRtcClient(
-            context               = this,
-            mediaProjectionIntent = mediaProjectionPermissionData,
-            signalingClient       = signalingClient,
-            eglBase               = eglBase,
-            localRenderer         = binding.localView,
-            remoteRenderer        = binding.remoteView,
-            listener              = object : WebRtcClient.Listener {
-                override fun onPeerConnected() = runOnUiThread {
-                    Toast.makeText(this@MainActivity, "Peer connected", Toast.LENGTH_SHORT).show()
+    private fun startScreenCaptureIntent() {
+        // Request screen capture permission right away when activity starts
+        mediaProjectionManager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        val screenCaptureIntent: Intent = mediaProjectionManager!!.createScreenCaptureIntent()
+        startActivityForResult(screenCaptureIntent, SCREEN_CAPTURE_REQUEST_CODE)
+    }
+
+    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+
+        if (requestCode == SCREEN_CAPTURE_REQUEST_CODE) {
+            if (resultCode == RESULT_OK && data != null) {
+                mediaProjectionPermissionResultData = data
+
+                val serviceIntent = Intent(this, ScreenCaptureService::class.java)
+                // Pass the MediaProjection permission result data to the service
+                serviceIntent.putExtra("mediaProjectionPermissionResultData", data)
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(serviceIntent)
+                } else {
+                    startService(serviceIntent)
                 }
 
-                override fun onPeerDisconnected() = runOnUiThread { stopScreenSharing() }
-
-                override fun onError(message: String) = runOnUiThread {
-                    Toast.makeText(this@MainActivity, "WebRTC error: $message", Toast.LENGTH_LONG).show()
-                }
+                onStatusChanged("Screen sharing started")
+            } else {
+                Toast.makeText(this, "Screen capture permission denied.", Toast.LENGTH_SHORT).show()
+                onStatusChanged("Screen sharing permission denied. Disconnecting...")
+                onBackPressed()
             }
-        )
-
-        //  Start signaling listeners (receiver path) then initiate call (offer)
-        webRtcClient.start()
-        webRtcClient.initiateCall()
-
-        //  Show floating stop button
-        showFloatingStopButton()
-    }
-
-
-    private fun stopScreenSharing() {
-        webRtcClient.stop()
-        mediaProjection?.stop()
-        stopService(Intent(this, ScreenCaptureService::class.java))
-        floatingStopButton.visibility = View.GONE
-        Toast.makeText(this, "Screen sharing stopped", Toast.LENGTH_SHORT).show()
-    }
-
-    private fun showFloatingStopButton() {
-        val inflater = getSystemService(LAYOUT_INFLATER_SERVICE) as LayoutInflater
-        val stopButtonView = inflater.inflate(com.example.splitterrr.R.layout.floating_stop_button, null)
-
-        val layoutParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            android.graphics.PixelFormat.TRANSLUCENT
-        )
-        layoutParams.x = 50
-        layoutParams.y = 100
-
-        val windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
-        windowManager.addView(stopButtonView, layoutParams)
-
-        stopButtonView.setOnClickListener {
-            stopScreenSharing()
-            windowManager.removeView(stopButtonView)
         }
     }
 
-    override fun onDestroy() {
+    public override fun onDestroy() {
+        if (peerConnectionClient != null) {
+            println("1111111 2 CallActivity onDestroy")
+            peerConnectionClient!!.onDestroy()
+            // Consider nulling out the static reference here if it's not managed by YourApplication
+            peerConnectionClient = null
+        }
+
+        binding.localView.release()
+        eglBase!!.release()
+
         super.onDestroy()
-        stopScreenSharing()
+    }
+
+    override fun onStatusChanged(newStatus: String?) {
+        runOnUiThread {
+            Toast.makeText(this@MainActivity, newStatus, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onDataChannelMessage(message: String?) {
+        onStatusChanged("Received message: $message")
+    }
+
+    override fun onRemoveLocalStream(localStream: MediaStream?) {
+        if (localStream != null && !localStream.videoTracks.isEmpty()) {
+            localStream.videoTracks[0].removeSink(binding.localView)
+        }
+        runOnUiThread {
+            binding.localView.clearImage()
+            // *** CHANGE 6: Adjust localView to fill parent if local stream is removed and no remote is expected ***
+            val params = binding.localView.getLayoutParams() as ConstraintLayout.LayoutParams
+            params.width = ConstraintLayout.LayoutParams.MATCH_PARENT
+            params.height = ConstraintLayout.LayoutParams.MATCH_PARENT
+            params.rightMargin = 0
+            params.bottomMargin = 0
+            params.topToBottom = ConstraintLayout.LayoutParams.UNSET
+            params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID // Fill vertically
+            params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID // Fill horizontally
+            params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID // Fill horizontally
+            params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID // Fill vertically
+            params.horizontalBias = 0.5f
+            params.verticalBias = 0.5f
+            binding.localView.setLayoutParams(params)
+        }
+    }
+
+    override fun onAddLocalStream(localStream: MediaStream?) {
+        if (localStream != null && !localStream.videoTracks.isEmpty()) {
+            val videoTrack = localStream.videoTracks[0]
+            videoTrack.setEnabled(true)
+            videoTrack.addSink(binding.localView)
+
+            // *** CHANGE 7: Ensure localView is full screen when a local stream (screen share) is added ***
+            runOnUiThread {
+                val params = binding.localView.getLayoutParams() as ConstraintLayout.LayoutParams
+                params.width = ConstraintLayout.LayoutParams.MATCH_PARENT
+                params.height = ConstraintLayout.LayoutParams.MATCH_PARENT
+                params.rightMargin = 0
+                params.topMargin = 0
+                params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+                params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+                params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+                params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+                params.horizontalBias = 0.5f
+                params.verticalBias = 0.5f
+                binding.localView.setLayoutParams(params)
+            }
+        }
+    }
+
+    override fun onAddRemoteStream(remoteStream: MediaStream?) {
+        if (remoteStream != null && !remoteStream.videoTracks.isEmpty()) {
+            // Option A: Just log and ignore. The track is received but not rendered.
+            // remoteStream.videoTracks.get(0).removeSink(remoteView); // Already not added, but safe if it was
+            remoteStream.videoTracks[0].setEnabled(false) // Attempt to signal to remote peer not to send this video data
+        }
+        // Handle remote audio if you want to hear it
+        if (remoteStream != null && !remoteStream.audioTracks.isEmpty()) {
+            remoteStream.audioTracks[0].setEnabled(true) // Keep audio enabled if you want to hear it
+            // You might need to add it to a specific audio renderer if not handled by WebRTC default
+        }
+
+        runOnUiThread {
+            onStatusChanged("Remote peer connected. Sharing screen.")
+            val params = binding.localView.getLayoutParams() as ConstraintLayout.LayoutParams
+            params.width = ConstraintLayout.LayoutParams.MATCH_PARENT
+            params.height = ConstraintLayout.LayoutParams.MATCH_PARENT
+            params.rightMargin = 0
+            params.topMargin = 0
+            params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            params.horizontalBias = 0.5f
+            params.verticalBias = 0.5f
+            binding.localView.setLayoutParams(params)
+        }
+    }
+
+    override fun onRemoveRemoteStream() {
+        runOnUiThread {
+            onStatusChanged("Remote peer disconnected.")
+            // Local view should remain full screen if no remote view is expected
+            val params = binding.localView.getLayoutParams() as ConstraintLayout.LayoutParams
+            params.width = ConstraintLayout.LayoutParams.MATCH_PARENT
+            params.height = ConstraintLayout.LayoutParams.MATCH_PARENT
+            params.rightMargin = 0
+            params.bottomMargin = 0
+            params.topToBottom =
+                ConstraintLayout.LayoutParams.UNSET // Reset any previous constraints
+            params.bottomToBottom = ConstraintLayout.LayoutParams.PARENT_ID
+            params.endToEnd = ConstraintLayout.LayoutParams.PARENT_ID
+            params.startToStart = ConstraintLayout.LayoutParams.PARENT_ID
+            params.topToTop = ConstraintLayout.LayoutParams.PARENT_ID
+            params.horizontalBias = 0.5f
+            params.verticalBias = 0.5f
+            binding.localView.setLayoutParams(params)
+        }
+    }
+
+    override fun onDataChannelStateChange(state: DataChannel.State?) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onPeersConnectionStatusChange(success: Boolean) {
+        TODO("Not yet implemented")
     }
 }
 

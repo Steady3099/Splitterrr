@@ -5,61 +5,92 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
-import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.example.splitterrr.R
+import com.example.splitterrr.ui.main.MainActivity
 
 class ScreenCaptureService : Service() {
-
-    companion object {
-        const val CHANNEL_ID = "screen_share_channel"
-        const val CHANNEL_NAME = "Screen Sharing"
-        const val NOTIFICATION_ID = 1001
-    }
-
-    override fun onCreate() {
-        super.onCreate()
-        createNotificationChannel()
-    }
-
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val notification = createNotification()
+        // Start the foreground service
+        startForeground(1, createNotification())
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            // API 29+ requires foreground service type
-            startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else {
-            // Pre-29 devices
-            startForeground(NOTIFICATION_ID, notification)
+        // *** CHANGE 1: Retrieve the MediaProjection permission result data from the incoming Intent ***
+        var mediaProjectionPermissionResultData: Intent? = null
+        if (intent != null && intent.hasExtra("mediaProjectionPermissionResultData")) {
+            mediaProjectionPermissionResultData =
+                intent.getParcelableExtra("mediaProjectionPermissionResultData")
         }
 
-        // You can start WebRTC client or projection logic here if needed
+        if (mediaProjectionPermissionResultData == null) {
+            Log.e(
+                TAG,
+                "MediaProjection permission result data is null. Cannot start screen capture."
+            )
+            // Stop the service if crucial data is missing
+            stopSelf()
+            return START_NOT_STICKY
+        }
 
-        return START_NOT_STICKY
+        Log.d(TAG, "ScreenCaptureService: Starting screen capture with PeerConnectionClient.")
+        // *** CHANGE 2: Pass the retrieved data directly to createDeviceCapture ***
+        // Ensure PeerConnectionClient is not null before calling its method
+        if (MainActivity.peerConnectionClient != null) {
+            MainActivity.peerConnectionClient?.createDeviceCapture(
+                true,
+                mediaProjectionPermissionResultData
+            )
+        } else {
+            Log.e(
+                TAG,
+                "PeerConnectionClient is null in ScreenCaptureService. Cannot start screen capture."
+            )
+            stopSelf() // Stop the service if PeerConnectionClient isn't ready
+        }
+
+        return START_STICKY
     }
 
     private fun createNotification(): Notification {
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("Screen Sharing")
-            .setContentText("Your screen is being shared.")
-            .setSmallIcon(R.drawable.ic_launcher_foreground) // Replace with your icon
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .build()
-    }
-
-    private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                CHANNEL_NAME,
+                "Screen Capture",
                 NotificationManager.IMPORTANCE_LOW
             )
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            // Register the channel with the system; you can't change the importance
+            // or other notification behaviors after this
+            val notificationManager = getSystemService(
+                NotificationManager::class.java
+            )
+            notificationManager?.createNotificationChannel(channel)
         }
+
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("Screen Capture Service")
+            .setContentText("Capturing the screen...")
+            .setSmallIcon(R.drawable.ic_launcher_foreground) // Ensure this drawable exists
+            .build()
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "ScreenCaptureService onDestroy.")
+        // If createDeviceCapture(false, null) is not called when stopping,
+        // you might want to add logic here to explicitly stop the screen capturer
+        // via PeerConnectionClient if it's still active.
+        // However, the current design assumes CallActivity handles stopping via the button.
+    }
+
+    override fun onBind(intent: Intent): IBinder? {
+        return null
+    }
+
+    companion object {
+        const val CHANNEL_ID: String = "ScreenCaptureChannel"
+        private val TAG: String =
+            ScreenCaptureService::class.java.canonicalName // Add a TAG for logging
+    }
 }
