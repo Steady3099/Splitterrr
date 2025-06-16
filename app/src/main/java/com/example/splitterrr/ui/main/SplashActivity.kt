@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Bundle
 import androidx.appcompat.app.AppCompatActivity
 import com.example.splitterrr.R
+import com.example.splitterrr.utils.webrtc.CallActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -22,7 +23,7 @@ class SplashActivity : AppCompatActivity() {
 //            finish() // Prevent back navigation to SplashActivity
 //        }
 
-        startActivity(Intent(this, MainActivity::class.java))
+        startActivity(Intent(this, CallActivity::class.java))
         finish()
     }
 }

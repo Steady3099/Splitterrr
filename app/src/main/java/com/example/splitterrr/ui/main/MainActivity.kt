@@ -12,8 +12,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import com.example.splitterrr.R
 import com.example.splitterrr.databinding.ActivityMainBinding
-import com.example.splitterrr.utils.ScreenCaptureService
 import com.example.splitterrr.utils.webrtc.PeerConnectionClient
+import com.example.splitterrr.utils.webrtc.ScreenCaptureService
 import org.webrtc.DataChannel
 import org.webrtc.EglBase
 import org.webrtc.MediaStream
@@ -31,7 +31,7 @@ class MainActivity : AppCompatActivity(), PeerConnectionClient.RtcListener {
 
     companion object {
         private const val SCREEN_CAPTURE_REQUEST_CODE: Int = 100
-        var peerConnectionClient: PeerConnectionClient? = null
+        lateinit var peerConnectionClient: PeerConnectionClient
     }
 
 
@@ -127,7 +127,7 @@ class MainActivity : AppCompatActivity(), PeerConnectionClient.RtcListener {
             println("1111111 2 CallActivity onDestroy")
             peerConnectionClient!!.onDestroy()
             // Consider nulling out the static reference here if it's not managed by YourApplication
-            peerConnectionClient = null
+//            peerConnectionClient = null
         }
 
         binding.localView.release()

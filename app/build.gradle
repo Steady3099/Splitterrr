@@ -65,9 +65,9 @@ dependencies {
     implementation 'com.google.android.gms:play-services-location:21.3.0'
 
 //    implementation 'io.github.webrtc-sdk:android:125.6422.07'
-    implementation("io.github.webrtc-sdk:android:125.6422.05")
+//    implementation("io.github.webrtc-sdk:android:125.6422.05")
     // OR if you want the prefixed package to avoid conflicts:
-    // implementation 'io.github.webrtc-sdk:android-prefixed:125.6422.07'
+     implementation 'io.github.webrtc-sdk:android-prefixed:125.6422.07'
 
 
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'

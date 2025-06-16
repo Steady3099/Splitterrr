@@ -41,12 +41,12 @@
         </activity>
 
         <activity
-            android:name=".ui.main.MainActivity"
+            android:name=".utils.webrtc.CallActivity"
             android:exported="true">
         </activity>
 
         <service
-            android:name=".utils.ScreenCaptureService"
+            android:name=".utils.webrtc.ScreenCaptureService"
             android:foregroundServiceType="mediaProjection"
             android:exported="false"
             tools:ignore="ForegroundServicePermission" />
