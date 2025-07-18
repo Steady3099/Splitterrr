@@ -27,24 +27,6 @@ class MainActivity : AppCompatActivity() {
                 .replace(R.id.fragment_container, ExpenseListFragment())
                 .commit()
         }
-
-        requestLocationPermission()
-    }
-
-    private val requestPermissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { isGranted: Boolean ->
-        if (!isGranted) {
-            Toast.makeText(this, "Location permission is required.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun requestLocationPermission() {
-        try{
-            requestPermissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
-        }catch (e: Exception){
-            e.printStackTrace()
-        }
     }
 
 
